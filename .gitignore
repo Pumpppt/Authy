@@ -1,0 +1,22 @@
+# Build output
+x64/
+Authy/x64/
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.dll
+*.exe
+
+# Keep required libs
+!Authy/minhook.lib
+
+# VS files
+.vs/
+*.user
+*.suo
+ipch/
+*.aps
+
+# Logs
+*.log
