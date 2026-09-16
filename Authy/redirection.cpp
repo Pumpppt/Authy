@@ -243,7 +243,7 @@ namespace Authy {
             auto domainAndPortStart = url.substr(protoEnd + protoSize);
             auto pathEnd = domainAndPortStart.find_first_of(L'/');
             auto domainAndPort = domainAndPortStart.substr(0, pathEnd);
-            auto pathStart = domainAndPortStart.substr(pathEnd != FString::npos ? pathEnd : 0);
+            auto pathStart = (pathEnd != FString::npos) ? domainAndPortStart.substr(pathEnd) : FString();
             domainAndPortStart.Dealloc();
 
             auto portOff = domainAndPort.find_first_of(L':');

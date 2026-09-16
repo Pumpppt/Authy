@@ -98,7 +98,58 @@ namespace Authy {
             return InternalFindStringRef(imageBase, str, len);
         }
 
+        static uint8_t* FindFunctionPrologue(uint8_t* strRef, bool bEOS) {
+            if (!strRef) return nullptr;
+
+            for (int i = 0; i < 4096; i++) {
+                if (bEOS) {
+                    if (CheckBytes3(strRef, i, 0x48, 0x89, 0x5C, true)) {
+                        return strRef - i;
+                    }
+                    continue;
+                }
+
+                // Check common function prologues first (UE4 / UE5):
+                if (CheckBytes3(strRef, i, 0x4C, 0x8B, 0xDC, true) ||
+                    CheckBytes3(strRef, i, 0x48, 0x8B, 0xC4, true) ||
+                    CheckBytes3(strRef, i, 0x48, 0x89, 0x5C, true)) {
+                    return strRef - i;
+                }
+
+                // If stack adjustment is found, look slightly further up for the actual prologue:
+                if (CheckBytes3(strRef, i, 0x48, 0x81, 0xEC, true) || 
+                    CheckBytes3(strRef, i, 0x48, 0x83, 0xEC, true)) {
+                    for (int x = 1; x < 64; x++) {
+                        if (CheckBytes3(strRef, i + x, 0x4C, 0x8B, 0xDC, true) ||
+                            CheckBytes3(strRef, i + x, 0x48, 0x8B, 0xC4, true) ||
+                            CheckBytes3(strRef, i + x, 0x48, 0x89, 0x5C, true)) {
+                            return strRef - (i + x);
+                        }
+                    }
+                }
+            }
+            return nullptr;
+        }
+
         static uint8_t* FindProcessRequest(uint64_t imageBase, bool bEOS) {
+            // Fast path: Known 26.20 VTable entry verification
+            if (!bEOS) {
+                uint64_t vtableSlot = imageBase + 0x0A793690;
+                if (IsReadablePtr((void*)vtableSlot, sizeof(void*))) {
+                    uint8_t* target = *(uint8_t**)vtableSlot;
+                    if (IsReadablePtr(target, 24)) {
+                        static const uint8_t k2620Prologue[] = {
+                            0x48, 0x89, 0x5C, 0x24, 0x20, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57,
+                            0x48, 0x8B, 0xEC, 0x48, 0x83, 0xEC, 0x40
+                        };
+                        if (memcmp(target, k2620Prologue, sizeof(k2620Prologue)) == 0) {
+                            return target;
+                        }
+                    }
+                }
+            }
+
+            // Universal string search across module
             uint8_t* strRef = FindStringRefInModule(imageBase, L"STAT_FCurlHttpRequest_ProcessRequest");
             if (!strRef) strRef = FindStringRefInModule(imageBase, L"%p: request (easy handle:%p) has been added to threaded queue for processing");
             if (!strRef) strRef = FindStringRefInModule(imageBase, "STAT_FCurlHttpRequest_ProcessRequest");
@@ -106,63 +157,65 @@ namespace Authy {
             if (!strRef) strRef = FindStringRefInModule(imageBase, L"FCurlHttpRequest::ProcessRequest");
             if (!strRef) strRef = FindStringRefInModule(imageBase, "FCurlHttpRequest::ProcessRequest");
 
-            if (!strRef) return nullptr;
+            if (strRef) {
+                uint8_t* fn = FindFunctionPrologue(strRef, bEOS);
+                if (fn) return fn;
+            }
 
-            uint8_t* processRequest = nullptr;
-            for (int i = 0; i < 2048; i++) {
-                if (bEOS) {
-                    if (CheckBytes3(strRef, i, 0x48, 0x89, 0x5C, true)) {
-                        processRequest = strRef - i;
-                        break;
-                    }
-                } else {
-                    if (CheckBytes3(strRef, i, 0x4C, 0x8B, 0xDC, true)) {
-                        processRequest = strRef - i;
-                        break;
-                    } else if (CheckBytes3(strRef, i, 0x48, 0x8B, 0xC4, true)) {
-                        processRequest = strRef - i;
-                        break;
-                    } else if (CheckBytes3(strRef, i, 0x48, 0x81, 0xEC, true) || CheckBytes3(strRef, i, 0x48, 0x83, 0xEC, true)) {
-                        for (int x = 0; x < 50; x++) {
-                            if (CheckBytes1(strRef, i + x, 0x40, true)) {
-                                processRequest = strRef - i - x;
-                                return processRequest;
-                            } else if (CheckBytes3(strRef, i + x, 0x4C, 0x8B, 0xDC, true) ||
-                                       CheckBytes3(strRef, i + x, 0x48, 0x8B, 0xC4, true) ||
-                                       CheckBytes3(strRef, i + x, 0x48, 0x89, 0x5C, true)) {
-                                break;
-                            }
-                        }
+            // Pattern scan fallback in .text for known ProcessRequest prologues
+            auto textSec = PE::GetSection(imageBase, ".text");
+            if (textSec && !bEOS) {
+                uint8_t* scanBytes = (uint8_t*)(imageBase + textSec->VirtualAddress);
+                size_t sz = textSec->Misc.VirtualSize;
+                static const uint8_t k2620Prologue[] = {
+                    0x48, 0x89, 0x5C, 0x24, 0x20, 0x55, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57,
+                    0x48, 0x8B, 0xEC, 0x48, 0x83, 0xEC, 0x40
+                };
+                for (size_t i = 0; i + sizeof(k2620Prologue) <= sz; i++) {
+                    if (memcmp(scanBytes + i, k2620Prologue, sizeof(k2620Prologue)) == 0) {
+                        return scanBytes + i;
                     }
                 }
             }
 
-            if (!processRequest) {
-                for (int i = 0; i < 2048; i++) {
-                    if (CheckBytes3(strRef, i, 0x48, 0x89, 0x5C, true) ||
-                        CheckBytes3(strRef, i, 0x48, 0x8B, 0xC4, true) ||
-                        CheckBytes3(strRef, i, 0x4C, 0x8B, 0xDC, true)) {
-                        processRequest = strRef - i;
-                        break;
-                    }
-                }
-            }
-
-            return processRequest;
+            return nullptr;
         }
 
         static void** FindVTableEntry(uint64_t imageBase, uint8_t* processRequest) {
-            auto rdataSec = PE::GetSection(imageBase, ".rdata");
-            if (!rdataSec) return nullptr;
+            if (!processRequest) return nullptr;
 
-            uint8_t* rdataStart = (uint8_t*)(imageBase + rdataSec->VirtualAddress);
-            size_t rdataSize = rdataSec->Misc.VirtualSize;
-
-            for (size_t i = 0; i < rdataSize - sizeof(void*); i += sizeof(void*)) {
-                if (*(uint64_t*)(rdataStart + i) == (uint64_t)processRequest) {
-                    return (void**)(rdataStart + i);
+            // Fast path for known 26.20 slot
+            uint64_t knownSlot = imageBase + 0x0A793690;
+            if (IsReadablePtr((void*)knownSlot, sizeof(void*))) {
+                if (*(uint64_t*)knownSlot == (uint64_t)processRequest) {
+                    return (void**)knownSlot;
                 }
             }
+
+            auto rdataSec = PE::GetSection(imageBase, ".rdata");
+            if (rdataSec) {
+                uint8_t* rdataStart = (uint8_t*)(imageBase + rdataSec->VirtualAddress);
+                size_t rdataSize = rdataSec->Misc.VirtualSize;
+
+                for (size_t i = 0; i < rdataSize - sizeof(void*); i += sizeof(void*)) {
+                    if (*(uint64_t*)(rdataStart + i) == (uint64_t)processRequest) {
+                        return (void**)(rdataStart + i);
+                    }
+                }
+            }
+
+            auto dataSec = PE::GetSection(imageBase, ".data");
+            if (dataSec) {
+                uint8_t* dataStart = (uint8_t*)(imageBase + dataSec->VirtualAddress);
+                size_t dataSize = dataSec->Misc.VirtualSize;
+
+                for (size_t i = 0; i < dataSize - sizeof(void*); i += sizeof(void*)) {
+                    if (*(uint64_t*)(dataStart + i) == (uint64_t)processRequest) {
+                        return (void**)(dataStart + i);
+                    }
+                }
+            }
+
             return nullptr;
         }
 

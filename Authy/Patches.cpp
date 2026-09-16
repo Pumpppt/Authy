@@ -25,6 +25,47 @@ namespace Authy {
             return false;
         }
 
+        static bool MatchPattern(const uint8_t* data, const char* pattern) {
+            const char* pat = pattern;
+            const uint8_t* ptr = data;
+            while (*pat) {
+                if (*pat == ' ') { pat++; continue; }
+                if (*pat == '?') {
+                    ptr++;
+                    pat++;
+                    if (*pat == '?') pat++;
+                    continue;
+                }
+                char byteStr[3] = { pat[0], pat[1], 0 };
+                uint8_t expected = (uint8_t)strtoul(byteStr, nullptr, 16);
+                if (*ptr != expected) return false;
+                ptr++;
+                pat += 2;
+            }
+            return true;
+        }
+
+        static uint8_t* FindPattern(uint8_t* start, size_t size, const char* pattern) {
+            if (!start || !size) return nullptr;
+            const char* pat = pattern;
+            while (*pat == ' ') pat++;
+            uint8_t firstByte = 0;
+            bool hasFirst = false;
+            if (*pat != '?') {
+                char byteStr[3] = { pat[0], pat[1], 0 };
+                firstByte = (uint8_t)strtoul(byteStr, nullptr, 16);
+                hasFirst = true;
+            }
+
+            for (size_t i = 0; i < size - 64; i++) {
+                if (hasFirst && start[i] != firstByte) continue;
+                if (MatchPattern(start + i, pattern)) {
+                    return start + i;
+                }
+            }
+            return nullptr;
+        }
+
         static void (*g_RequestExitWithStatusOG)(bool Force, unsigned char Code, wchar_t* CloseReason) = nullptr;
 
         static void RequestExitWithStatusHook(bool Force, unsigned char Code, wchar_t* CloseReason) {
@@ -38,6 +79,9 @@ namespace Authy {
 
             MH_Initialize();
 
+            uint8_t* textStart = (uint8_t*)Globals::MainTextBuf;
+            size_t textSize = Globals::MainTextSize;
+
             // 1. Hook RequestExitWithStatus (32.11 RVA: 0x4336BAC)
             bool is3211 = false;
             void* exitFn = (void*)(base + 0x4336BAC);
@@ -50,19 +94,38 @@ namespace Authy {
                 }
             }
 
-            // 2. Pattern scan fallback for RequestExitWithStatus across versions
-            if (!is3211 && Globals::MainTextBuf && Globals::MainTextSize) {
-                static const uint8_t exitSig[] = {
-                    0x4C, 0x8B, 0xDC, 0x4B, 0x89, 0x5B, 0x08, 0x49, 0x89, 0x6B, 0x10,
-                    0x4B, 0x89, 0x73, 0x18, 0x4B, 0x89, 0x7B, 0x20, 0x43, 0x56, 0x48, 0x83, 0xEC, 0x30, 0x0F, 0xB6, 0xF2
+            // 2. Universal Exit Patterns & Security Bypass Patches (from Eclipse / Universal)
+            if (textStart && textSize) {
+                // Exit patterns
+                static const char* exitPatterns[] = {
+                    "48 89 5C 24 ? 57 48 83 EC 40 41 B9 ? ? ? ? 0F B6 F9 44 38 0D ? ? ? ? 0F B6 DA 72 24 89 5C 24 30 48 8D 05 ? ? ? ? 89 7C 24 28 4C 8D 05 ? ? ? ? 33 D2 48 89 44 24 ? 33 C9 E8 ? ? ? ?",
+                    "48 8B C4 48 89 58 18 88 50 10 88 48 08 57 48 83 EC 30",
+                    "4C 8B DC 49 89 5B 08 49 89 6B 10 49 89 73 18 49 89 7B 20 41 56 48 83 EC 30 80 3D ? ? ? ? ? 49 8B"
                 };
-                uint8_t* scanBytes = (uint8_t*)Globals::MainTextBuf;
-                size_t sz = Globals::MainTextSize;
-                for (size_t i = 0; i < sz - sizeof(exitSig); i++) {
-                    if (memcmp(scanBytes + i, exitSig, sizeof(exitSig)) == 0) {
-                        void* target = (void*)(scanBytes + i);
-                        MH_CreateHook(target, (LPVOID)RequestExitWithStatusHook, (LPVOID*)&g_RequestExitWithStatusOG);
-                        MH_EnableHook(target);
+
+                for (const auto& pat : exitPatterns) {
+                    uint8_t* addr = FindPattern(textStart, textSize, pat);
+                    if (addr) {
+                        SafePatch<uint8_t>((uintptr_t)addr, 0xC3);
+                        break;
+                    }
+                }
+
+                // Security / Environment checks
+                static const char* envPatterns[] = {
+                    "4C 8B DC 55 49 8D AB ? ? ? ? 48 81 EC ? ? ? ? 48 8B 05 ? ? ? ? 48 33 C4 48 89 85 ? ? ? ? 49 89 73 F0 49 89 7B E8 48 8B F9 4D 89 63 E0 4D 8B E0 4D 89 6B D8",
+                    "48 89 5C 24 ? 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ? 48 81 EC ? ? ? ? 48 8B 05 ? ? ? ? 48 33 C4 48 89 45 ? 41 0F B6 D8 48 89 55 ? 88 5C 24 ?",
+                    "48 89 5C 24 ? 55 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ? ? ? ? 48 81 EC ? ? ? ? 48 8B 05 ? ? ? ? 48 33 C4 48 89 85 ? ? ? ? 80 B9 ? ? ? ? ? 48 8B DA 48 8B F1",
+                    "48 89 5C 24 ? 55 56 57 41 54 41 55 41 56 41 57 48 8D AC 24 ? ? ? ? 48 81 EC ? ? ? ? 48 8B 05 ? ? ? ? 48 33 C4 48 89 85 ? ? ? ? ? 0F B6 ? 44 88 44 24 ?",
+                    "48 89 5C 24 ? 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ? 48 81 EC ? ? ? ? 48 8B 05 ? ? ? ? 48 33 C4 48 89 45 ? 45 0F B6 F8",
+                    "40 55 53 56 57 41 54 41 56 41 57 48 8D AC 24 ? ? ? ? 48 81 EC ? ? ? ? 48 8B 05 ? ? ? ? 48 33 C4 48 89 85 ? ? ? ? ? 0F B6 ?",
+                    "4C 8B DC 55 49 8D AB ? ? ? ? 48 81 EC ? ? ? ? 48 8B 05 ? ? ? ? 48 33 C4 48 89 85 ? ? ? ?"
+                };
+
+                for (const auto& pat : envPatterns) {
+                    uint8_t* addr = FindPattern(textStart, textSize, pat);
+                    if (addr) {
+                        SafePatch<uint8_t>((uintptr_t)addr, 0xC3);
                         break;
                     }
                 }
