@@ -1,0 +1,25 @@
+{
+    "Fortnite": [
+        {
+            "bUseFortniteredirect": true,
+            "bShowFortniteLogs": false
+        }
+    ],
+    "UEFN": [
+        {
+            "bUseUEFNredirect": false,
+            "bUseCURL": false,
+            "bShowUEFNLogs": false
+        }
+    ],
+    "Backend": {
+        "BackendURL": "http://127.0.0.1:5595"
+    },
+    "Settings": {
+        "EnableConsole": true,
+        "FixMemLeak": true,
+        "AntiExit": true,
+        "ManualMapping": false,
+        "URLMode": "Default"
+    }
+}

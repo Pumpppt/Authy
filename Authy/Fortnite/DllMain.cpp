@@ -7,7 +7,14 @@
 namespace Authy {
     static DWORD WINAPI MainThread(LPVOID) {
         // 1. Initialize Configuration, Image/Sections, Console & Version Detection
+        //    (reads config.json from DLL directory)
         Config::Init();
+
+        // Only proceed if a redirect mode is actually enabled
+        if (!Config::UseFortniteredirect && !Config::UseUEFNredirect) {
+            Config::Log("Authy", "No redirect enabled in config.json - standing by.\n");
+            return 0;
+        }
 
         // 2. Install Anti-Crash, Anti-Exit, and Signature Patches
         if (Config::AntiExit) {
@@ -17,7 +24,6 @@ namespace Authy {
         // 3. Install Universal & 32.11 Hooks (Engine, EOS, Libcurl)
         Hooks::Install();
 
-        Config::Log("Authy", "Ready! All requests will be redirected to %ls\n\n", Config::BackendW.c_str());
         return 0;
     }
 }

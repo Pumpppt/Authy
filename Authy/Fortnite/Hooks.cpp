@@ -237,7 +237,6 @@ namespace Authy {
                         if (CheckBytes(fn, i, p, 3, false)) {
                             uint32_t off = *(uint32_t*)(fn + i + 3);
                             if (off >= 8 && off < 0x800) {
-                                Config::Log("Authy", "URL offset found via disasm at vtable[0]+%d: 0x%X\n", i, off);
                                 return off;
                             }
                         }
@@ -257,7 +256,6 @@ namespace Authy {
                     __try {
                         const wchar_t* s = candidate->String;
                         if (s[0] == L'h' && s[1] == L't' && s[2] == L't' && s[3] == L'p') {
-                            Config::Log("Authy", "URL offset found via object scan at 0x%X (url=%ls)\n", off, s);
                             return off;
                         }
                     } __except(EXCEPTION_EXECUTE_HANDLER) {}
@@ -341,7 +339,10 @@ namespace Authy {
             // Explicitly DO NOT redirect cdn2.unrealengine.com
             if (wcsstr(urlField->String, L"cdn2.unrealengine.com") != nullptr) return;
 
-            if (Redirection::ShouldRedirectUrl(urlField->String)) {
+            if (urlField->String[0] == L'h' && urlField->String[1] == L't' && urlField->String[2] == L't' && urlField->String[3] == L'p') {
+                wprintf(L"[LogsCURLLive] %ls\n", urlField->String);
+                fflush(stdout);
+
                 FString urlCopy(urlField->String);
                 Redirection::URL parsed(urlCopy);
 
@@ -350,7 +351,6 @@ namespace Authy {
 
                 FString newUrl = parsed.GetUrl();
                 if (newUrl.String && newUrl.Length > 0) {
-                    Config::LogW("Redirect", L"%ls -> %ls\n", urlField->String, newUrl.String);
                     ModifyURLInPlace(urlField, newUrl);
                 }
 
@@ -385,9 +385,6 @@ namespace Authy {
             *vtableEntry = hook;
             VirtualProtect(vtableEntry, sizeof(void*), oldProt, &oldProt);
 
-            Config::Log("Authy", "Hook installed in %s (func=%p, vft=%p)\n",
-                   bEOS ? "EOSSDK-Win64-Shipping" : "Main Executable",
-                   processRequest, (void*)vtableEntry);
             return true;
         }
 
@@ -402,29 +399,20 @@ namespace Authy {
                 const char* urlStr = (const char*)param;
 
                 // Explicitly DO NOT redirect cdn2.unrealengine.com
-                if (strstr(urlStr, "cdn2.unrealengine.com") != nullptr) {
-                    return g_Original_curl_easy_setopt(handle, option, param);
-                }
+                if (strstr(urlStr, "cdn2.unrealengine.com") == nullptr) {
+                    if (strstr(urlStr, "http://") == urlStr || strstr(urlStr, "https://") == urlStr) {
+                        printf("[LogsCURLLive] %s\n", urlStr);
+                        fflush(stdout);
 
-                if (Redirection::ShouldRedirectUrlA(urlStr)) {
-                    std::string url(urlStr);
-                    static const char* redirectedHosts[] = {
-                        "ol.epicgames.com", "ol.epicgames.net", "on.epicgames.com",
-                        "game-social.epicgames.com", "ak.epicgames.com", "epicgames.dev",
-                        "superawesome.com", "akamaized.net", "eosapi.epicgames.com", "epicgames.com"
-                    };
-
-                    for (const auto& host : redirectedHosts) {
-                        size_t pos = url.find(host);
-                        if (pos != std::string::npos) {
-                            size_t slashAfter = url.find('/', pos);
-                            std::string path = (slashAfter != std::string::npos) ? url.substr(slashAfter) : "";
+                        const char* protoEnd = strstr(urlStr, "://");
+                        if (protoEnd) {
+                            const char* pathStart = strchr(protoEnd + 3, '/');
+                            std::string path = pathStart ? pathStart : "";
                             std::string rewritten = Config::BackendA + path;
 
                             g_Original_curl_easy_setopt(handle, 64, (void*)0); // CURLOPT_SSL_VERIFYPEER = 0
                             g_Original_curl_easy_setopt(handle, 81, (void*)0); // CURLOPT_SSL_VERIFYHOST = 0
 
-                            Config::Log("Redirect", "%s -> %s\n", urlStr, rewritten.c_str());
                             return g_Original_curl_easy_setopt(handle, option, (void*)rewritten.c_str());
                         }
                     }
@@ -451,7 +439,6 @@ namespace Authy {
                 MH_CreateHook(fnSetOpt, (void*)Hooked_curl_easy_setopt, (void**)&g_Original_curl_easy_setopt);
                 MH_EnableHook(fnSetOpt);
                 g_CurlHookInstalled = true;
-                Config::Log("Authy", "Libcurl curl_easy_setopt hook active at %p\n", fnSetOpt);
                 return true;
             }
             return false;
@@ -470,13 +457,40 @@ namespace Authy {
             for (size_t i = 0; i < sz - sizeof(sig1); i++) {
                 if (memcmp(scanBytes + i, sig1, sizeof(sig1)) == 0) {
                     Unreal::Memory::FMemory__Realloc = (uint64_t)(scanBytes + i);
-                    Config::Log("Authy", "Discovered FMemory::Realloc at %p\n", (void*)Unreal::Memory::FMemory__Realloc);
                     return;
                 }
             }
         }
 
+        static DWORD WINAPI BackgroundHookThread(LPVOID) {
+            for (int i = 0; i < 600; i++) {
+                if (!g_CurlHookInstalled) {
+                    InstallCurlHook();
+                }
+
+                if (!g_ProcessRequestOG && Globals::MainImageBase) {
+                    InitializeForModule((uint64_t)Globals::MainImageBase, (void*)ProcessRequestHook,
+                                        (void**)&g_ProcessRequestOG, false);
+                }
+
+                if (!g_EOSProcessRequestOG) {
+                    if (!Globals::EOSModuleBase) {
+                        Globals::EOSModuleBase = GetModuleHandleA("EOSSDK-Win64-Shipping");
+                    }
+                    if (Globals::EOSModuleBase) {
+                        InitializeForModule((uint64_t)Globals::EOSModuleBase, (void*)EOSProcessRequestHook,
+                                            (void**)&g_EOSProcessRequestOG, true);
+                    }
+                }
+
+                Sleep(100);
+            }
+            return 0;
+        }
+
         bool Install() {
+            MH_Initialize();
+
             FindFMemoryRealloc();
 
             bool curlActive = InstallCurlHook();
@@ -510,9 +524,8 @@ namespace Authy {
                 Sleep(30);
             }
 
-            Config::Log("Authy", "Status -> Libcurl: %s | FCurlHttpRequest: %s\n",
-                   curlActive ? "ACTIVE" : "STANDBY",
-                   (hookedMain || hookedEOS) ? "ACTIVE" : "STANDBY");
+            // Spawn background polling thread to ensure dynamic late-loaded curl / EOS hooks attach
+            CreateThread(nullptr, 0, (LPTHREAD_START_ROUTINE)BackgroundHookThread, nullptr, 0, nullptr);
 
             return (curlActive || hookedMain || hookedEOS);
         }
@@ -522,3 +535,4 @@ namespace Authy {
         }
     }
 }
+

@@ -151,11 +151,7 @@ namespace Authy {
 
                 // Missing signature patch
                 SafePatch<uint32_t>(base + 0x20C26E2 + 4, 0x0);
-
-                Config::Log("Authy", "32.11 Signature & UTOC Bypasses Applied\n");
             }
-
-            Config::Log("Authy", "Anti-Exit & Anti-Crash Patches Active\n");
         }
     }
 }

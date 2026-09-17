@@ -9,48 +9,51 @@
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
+    <Filter Include="Fortnite">
+      <UniqueIdentifier>{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="pch.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="Fortnite\pch.cpp">
+      <Filter>Fortnite</Filter>
     </ClCompile>
-    <ClCompile Include="Config.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="Fortnite\Config.cpp">
+      <Filter>Fortnite</Filter>
     </ClCompile>
-    <ClCompile Include="Redirection.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="Fortnite\redirection.cpp">
+      <Filter>Fortnite</Filter>
     </ClCompile>
-    <ClCompile Include="Hooks.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="Fortnite\Hooks.cpp">
+      <Filter>Fortnite</Filter>
     </ClCompile>
-    <ClCompile Include="Patches.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="Fortnite\Patches.cpp">
+      <Filter>Fortnite</Filter>
     </ClCompile>
-    <ClCompile Include="DllMain.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="Fortnite\DllMain.cpp">
+      <Filter>Fortnite</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Authy.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="Fortnite\Authy.h">
+      <Filter>Fortnite</Filter>
     </ClInclude>
-    <ClInclude Include="pch.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="Fortnite\pch.h">
+      <Filter>Fortnite</Filter>
     </ClInclude>
-    <ClInclude Include="Config.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="Fortnite\Config.h">
+      <Filter>Fortnite</Filter>
     </ClInclude>
-    <ClInclude Include="Redirection.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="Fortnite\Redirection.h">
+      <Filter>Fortnite</Filter>
     </ClInclude>
-    <ClInclude Include="Hooks.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="Fortnite\Hooks.h">
+      <Filter>Fortnite</Filter>
     </ClInclude>
-    <ClInclude Include="Patches.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="Fortnite\Patches.h">
+      <Filter>Fortnite</Filter>
     </ClInclude>
-    <ClInclude Include="MinHook.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="Fortnite\MinHook.h">
+      <Filter>Fortnite</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
