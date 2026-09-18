@@ -3,6 +3,7 @@
 #include "Config.h"
 #include "Hooks.h"
 #include "Patches.h"
+#include "UEFN.h"
 
 namespace Authy {
     static DWORD WINAPI MainThread(LPVOID) {
@@ -10,20 +11,24 @@ namespace Authy {
         //    (reads config.json from DLL directory)
         Config::Init();
 
-        // Only proceed if a redirect mode is actually enabled
-        if (!Config::UseFortniteredirect && !Config::UseUEFNredirect) {
-            Config::Log("Authy", "No redirect enabled in config.json - standing by.\n");
+        // 2. Route to appropriate redirection mode based on config.json
+        if (Config::UseUEFNredirect) {
+            UEFN::Init();
             return 0;
         }
 
-        // 2. Install Anti-Crash, Anti-Exit, and Signature Patches
-        if (Config::AntiExit) {
-            Patches::Install();
+        if (Config::UseFortniteredirect) {
+            // Install Anti-Crash, Anti-Exit, and Signature Patches
+            if (Config::AntiExit) {
+                Patches::Install();
+            }
+
+            // Install Universal & 32.11 Hooks (Engine, EOS, Libcurl)
+            Hooks::Install();
+            return 0;
         }
 
-        // 3. Install Universal & 32.11 Hooks (Engine, EOS, Libcurl)
-        Hooks::Install();
-
+        Config::Log("Authy", "No redirect enabled in config.json - standing by.\n");
         return 0;
     }
 }
@@ -39,7 +44,11 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         }
         break;
     case DLL_PROCESS_DETACH:
-        Authy::Hooks::Remove();
+        if (Authy::Config::UseUEFNredirect) {
+            Authy::UEFN::Shutdown();
+        } else if (Authy::Config::UseFortniteredirect) {
+            Authy::Hooks::Remove();
+        }
         Authy::Config::Shutdown();
         break;
     }

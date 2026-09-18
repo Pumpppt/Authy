@@ -12,6 +12,9 @@
     <Filter Include="Fortnite">
       <UniqueIdentifier>{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}</UniqueIdentifier>
     </Filter>
+    <Filter Include="UEFN">
+      <UniqueIdentifier>{B2C3D4E5-F6A7-8901-BCDE-FA2345678901}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Fortnite\pch.cpp">
@@ -31,6 +34,9 @@
     </ClCompile>
     <ClCompile Include="Fortnite\DllMain.cpp">
       <Filter>Fortnite</Filter>
+    </ClCompile>
+    <ClCompile Include="UEFN\DllMain.cpp">
+      <Filter>UEFN</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -54,6 +60,9 @@
     </ClInclude>
     <ClInclude Include="Fortnite\MinHook.h">
       <Filter>Fortnite</Filter>
+    </ClInclude>
+    <ClInclude Include="UEFN\UEFN.h">
+      <Filter>UEFN</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
